@@ -19,42 +19,39 @@ genai.configure(api_key=GEMINI_API_KEY)
 
 user_prompt_dict = {}
 
-# === TẠO ẢNH VỚI OPENAI ===
 async def generate_dalle(prompt):
     try:
         response = openai_client.images.generate(
-            model="dall-e-2",
+            model="dall-e-3",  # dùng lại v3, rõ lỗi hơn
             prompt=prompt,
             size="1024x1024",
+            quality="standard",
             n=1
         )
         return response.data[0].url
     except openai.APIStatusError as e:
         print("DALL·E status error:", e.status_code, e.response)
     except Exception as e:
-        print("DALL·E unexpected error:", e)
+        print("DALL·E error:", e)
     return None
 
-# === TẠO ẢNH VỚI GEMINI ===
 async def generate_gemini(prompt):
     try:
         model = genai.GenerativeModel("gemini-1.5-flash")
         response = model.generate_content(
-            contents=[{"role": "user", "parts": [prompt]}],
+            contents=prompt,
             generation_config=GenerationConfig(response_mime_type=["image"])
         )
         for part in response.parts:
             if hasattr(part, "inline_data") and part.inline_data.data:
-                image_data = part.inline_data.data
                 file_path = "gemini_image.png"
                 with open(file_path, "wb") as f:
-                    f.write(image_data)
+                    f.write(part.inline_data.data)
                 return file_path
     except Exception as e:
         print("Gemini error:", e)
     return None
 
-# === KHI NGƯỜI DÙNG GỬI PROMPT ===
 async def handle_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE):
     prompt = update.message.text.strip()
     if not prompt:
@@ -72,7 +69,6 @@ async def handle_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup=keyboard
     )
 
-# === KHI NGƯỜI DÙNG NHẤN NÚT CHỌN AI ===
 async def handle_selection(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -85,37 +81,34 @@ async def handle_selection(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if query.data == "use_openai":
         await query.edit_message_text("🧠 Đang tạo ảnh với OpenAI...")
-        image_url = await generate_dalle(prompt)
-        if image_url:
-            await context.bot.send_photo(chat_id=query.message.chat_id, photo=image_url, caption="🟢 OpenAI (DALL·E v2)")
+        url = await generate_dalle(prompt)
+        if url:
+            await context.bot.send_photo(chat_id=query.message.chat_id, photo=url, caption="🟢 OpenAI (DALL·E)")
         else:
-            await context.bot.send_message(chat_id=query.message.chat_id, text="⚠️ OpenAI thất bại. Thử tạo bằng Gemini...")
-            image_path = await generate_gemini(prompt)
-            if image_path:
-                with open(image_path, "rb") as img:
-                    await context.bot.send_photo(chat_id=query.message.chat_id, photo=img, caption="🟡 Gemini (Fallback)")
+            await context.bot.send_message(chat_id=query.message.chat_id, text="⚠️ OpenAI lỗi. Thử Gemini...")
+            path = await generate_gemini(prompt)
+            if path:
+                with open(path, "rb") as img:
+                    await context.bot.send_photo(chat_id=query.message.chat_id, photo=img, caption="🟡 Gemini (fallback)")
             else:
-                await context.bot.send_message(chat_id=query.message.chat_id, text="❌ Cả hai AI đều không thể tạo ảnh.")
-
-    elif query.data == "use_gemini":
+                await context.bot.send_message(chat_id=query.message.chat_id, text="❌ Cả hai AI đều lỗi.")
+    else:
         await query.edit_message_text("🧠 Đang tạo ảnh với Gemini...")
-        image_path = await generate_gemini(prompt)
-        if image_path:
-            with open(image_path, "rb") as img:
-                await context.bot.send_photo(chat_id=query.message.chat_id, photo=img, caption="🟡 Google Gemini")
+        path = await generate_gemini(prompt)
+        if path:
+            with open(path, "rb") as img:
+                await context.bot.send_photo(chat_id=query.message.chat_id, photo=img, caption="🟡 Gemini")
         else:
-            await context.bot.send_message(chat_id=query.message.chat_id, text="⚠️ Gemini thất bại. Thử tạo bằng OpenAI...")
-            image_url = await generate_dalle(prompt)
-            if image_url:
-                await context.bot.send_photo(chat_id=query.message.chat_id, photo=image_url, caption="🟢 OpenAI (Fallback)")
+            await context.bot.send_message(chat_id=query.message.chat_id, text="⚠️ Gemini lỗi. Thử OpenAI...")
+            url = await generate_dalle(prompt)
+            if url:
+                await context.bot.send_photo(chat_id=query.message.chat_id, photo=url, caption="🟢 OpenAI (fallback)")
             else:
-                await context.bot.send_message(chat_id=query.message.chat_id, text="❌ Cả hai AI đều không thể tạo ảnh.")
+                await context.bot.send_message(chat_id=query.message.chat_id, text="❌ Cả hai AI đều lỗi.")
 
-# === LỆNH /start ===
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("👋 Gửi prompt để bắt đầu tạo ảnh!")
+    await update.message.reply_text("👋 Gửi prompt để tạo ảnh bằng AI!")
 
-# === CHẠY BOT ===
 if __name__ == '__main__':
     app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
     app.add_handler(CommandHandler("start", start))
