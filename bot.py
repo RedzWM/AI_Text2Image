@@ -1,25 +1,25 @@
 import os
 import openai
 import google.generativeai as genai
+from google.generativeai.types import GenerationConfig
 from telegram import Update
-from telegram.ext import ApplicationBuilder, ContextTypes, CommandHandler, MessageHandler, filters
+from telegram.ext import (
+    ApplicationBuilder, ContextTypes,
+    CommandHandler, MessageHandler, filters
+)
 from dotenv import load_dotenv
-from PIL import Image
-from io import BytesIO
 
-# Load biến môi trường từ Railway (hoặc .env local)
+# Load biến môi trường
 load_dotenv()
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
-# Cấu hình client OpenAI
+# Cấu hình API
 openai_client = openai.OpenAI(api_key=OPENAI_API_KEY)
-
-# Cấu hình Gemini
 genai.configure(api_key=GEMINI_API_KEY)
 
-# === HÀM TẠO ẢNH TỪ DALL·E (OpenAI) ===
+# === Hàm tạo ảnh từ OpenAI DALL·E ===
 async def generate_dalle(prompt):
     try:
         response = openai_client.images.generate(
@@ -34,15 +34,15 @@ async def generate_dalle(prompt):
         print("OpenAI (DALL·E) Error:", e)
         return None
 
-# === HÀM TẠO ẢNH TỪ GEMINI ===
+# === Hàm tạo ảnh từ Gemini ===
 async def generate_gemini(prompt):
     try:
         model = genai.GenerativeModel("gemini-1.5-flash")
         response = model.generate_content(
             contents=prompt,
-            generation_config={
-                "response_mime_type": ["image"]
-            }
+            generation_config=GenerationConfig(
+                response_mime_type=["image"]
+            )
         )
         for part in response.parts:
             if hasattr(part, "inline_data") and part.inline_data.data:
@@ -56,30 +56,34 @@ async def generate_gemini(prompt):
         print("Gemini Error:", e)
         return None
 
-# === XỬ LÝ PROMPT ===
+# === Hàm xử lý prompt người dùng ===
 async def handle_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE):
     prompt = update.message.text
-    await update.message.reply_text("🧠 Đang tạo ảnh từ OpenAI và Gemini...")
 
+    await update.message.reply_text("🧠 Đang tạo ảnh từ OpenAI (DALL·E)...")
+
+    # Gọi OpenAI trước
     dalle_url = await generate_dalle(prompt)
-    gemini_path = await generate_gemini(prompt)
-
     if dalle_url:
-        await update.message.reply_photo(photo=dalle_url, caption="🟢 OpenAI (DALL·E v3)")
+        await update.message.reply_photo(photo=dalle_url, caption="🟢 OpenAI (DALL·E)")
     else:
         await update.message.reply_text("❌ Không tạo được ảnh từ OpenAI.")
 
+    # Tiếp tục với Gemini sau khi OpenAI xong
+    await update.message.reply_text("✨ Đang tạo ảnh từ Google Gemini...")
+
+    gemini_path = await generate_gemini(prompt)
     if gemini_path:
         with open(gemini_path, "rb") as img:
             await update.message.reply_photo(photo=img, caption="🟡 Google Gemini")
     else:
         await update.message.reply_text("❌ Không tạo được ảnh từ Gemini.")
 
-# === BẮT ĐẦU BOT ===
+# === Khởi động bot ===
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("👋 Gửi mình prompt mô tả hình ảnh bạn muốn tạo!")
+    await update.message.reply_text("👋 Gửi prompt mô tả hình ảnh bạn muốn tạo!")
 
-# === CHẠY ỨNG DỤNG ===
+# === Chạy bot ===
 if __name__ == '__main__':
     app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
     app.add_handler(CommandHandler("start", start))
