@@ -7,66 +7,79 @@ from dotenv import load_dotenv
 from PIL import Image
 from io import BytesIO
 
+# Load biến môi trường từ Railway (hoặc .env local)
 load_dotenv()
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
-openai.api_key = OPENAI_API_KEY
+# Cấu hình client OpenAI
+openai_client = openai.OpenAI(api_key=OPENAI_API_KEY)
+
+# Cấu hình Gemini
 genai.configure(api_key=GEMINI_API_KEY)
 
-# === DALL·E ===
+# === HÀM TẠO ẢNH TỪ DALL·E (OpenAI) ===
 async def generate_dalle(prompt):
     try:
-        response = openai.Image.create(prompt=prompt, n=1, size="512x512")
-        return response['data'][0]['url']
+        response = openai_client.images.generate(
+            model="dall-e-3",
+            prompt=prompt,
+            size="1024x1024",
+            quality="standard",
+            n=1
+        )
+        return response.data[0].url
     except Exception as e:
-        print("DALL·E Error:", e)
+        print("OpenAI (DALL·E) Error:", e)
         return None
 
-# === GEMINI ===
+# === HÀM TẠO ẢNH TỪ GEMINI ===
 async def generate_gemini(prompt):
     try:
-        model = genai.GenerativeModel("gemini-2.0-flash-preview-image-generation")
+        model = genai.GenerativeModel("gemini-1.5-flash")
         response = model.generate_content(
             contents=prompt,
-            generation_config=genai.types.GenerationConfig(
-                response_mime_type=["IMAGE"]
-            )
+            generation_config={
+                "response_mime_type": ["image"]
+            }
         )
-        for part in response.candidates[0].content.parts:
-            if part.inline_data:
+        for part in response.parts:
+            if hasattr(part, "inline_data") and part.inline_data.data:
                 image_data = part.inline_data.data
-                # Lưu ảnh tạm vào file để gửi
-                with open("gemini_temp.png", "wb") as f:
+                file_path = "gemini_image.png"
+                with open(file_path, "wb") as f:
                     f.write(image_data)
-                return "gemini_temp.png"
+                return file_path
         return None
     except Exception as e:
         print("Gemini Error:", e)
         return None
 
-# === HANDLER ===
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("👋 Gửi một prompt mô tả hình ảnh bạn muốn tạo!")
-
+# === XỬ LÝ PROMPT ===
 async def handle_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE):
     prompt = update.message.text
-    await update.message.reply_text("🎨 Đang tạo ảnh từ OpenAI và Gemini...")
+    await update.message.reply_text("🧠 Đang tạo ảnh từ OpenAI và Gemini...")
 
-    dalle = await generate_dalle(prompt)
+    dalle_url = await generate_dalle(prompt)
     gemini_path = await generate_gemini(prompt)
 
-    if dalle:
-        await update.message.reply_photo(photo=dalle, caption="🟢 OpenAI (DALL·E)")
+    if dalle_url:
+        await update.message.reply_photo(photo=dalle_url, caption="🟢 OpenAI (DALL·E v3)")
+    else:
+        await update.message.reply_text("❌ Không tạo được ảnh từ OpenAI.")
+
     if gemini_path:
-        with open(gemini_path, "rb") as photo:
-            await update.message.reply_photo(photo=photo, caption="🟡 Google Gemini")
+        with open(gemini_path, "rb") as img:
+            await update.message.reply_photo(photo=img, caption="🟡 Google Gemini")
+    else:
+        await update.message.reply_text("❌ Không tạo được ảnh từ Gemini.")
 
-    if not dalle and not gemini_path:
-        await update.message.reply_text("⚠️ Không tạo được ảnh. Kiểm tra API key.")
+# === BẮT ĐẦU BOT ===
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("👋 Gửi mình prompt mô tả hình ảnh bạn muốn tạo!")
 
-# === MAIN ===
+# === CHẠY ỨNG DỤNG ===
 if __name__ == '__main__':
     app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
     app.add_handler(CommandHandler("start", start))
