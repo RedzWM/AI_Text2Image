@@ -10,10 +10,6 @@ from dotenv import load_dotenv
 from google import genai
 from google.genai import types
 
-import requests
-print("Your public IP and region info:")
-print(requests.get("https://ipinfo.io/json").json())
-
 
 # Load environment variables
 load_dotenv()
@@ -58,6 +54,15 @@ async def handle_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ Không tạo được ảnh.")
 
 if __name__ == '__main__':
+    import requests
+
+try:
+    ip_info = requests.get("https://ipinfo.io/json").json()
+    print(f"🌐 Server Public IP: {ip_info.get('ip')}")
+    print(f"🌍 Location: {ip_info.get('city')}, {ip_info.get('country')}")
+except Exception as e:
+    print("⚠️ Không thể lấy thông tin IP:", e)
+
     app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_prompt))
