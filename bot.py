@@ -10,60 +10,58 @@ from dotenv import load_dotenv
 from google import genai
 from google.genai import types
 
-
 # Load environment variables
 load_dotenv()
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
+WEBHOOK_URL = os.environ.get("WEBHOOK_URL")
 
-# Initialize Gemini client
+# Initialize Google AI Client
 client = genai.Client(api_key=GEMINI_API_KEY)
 
-# === Generate image from Gemini-native ===
-async def generate_image(prompt: str):
+# === Image generation ===
+async def generate_imagen(prompt: str):
     try:
-        response = client.models.generate_content(
-            model="gemini-2.0-flash-preview-image-generation",
-            contents=prompt,
-            config=types.GenerateContentConfig(
-                response_modalities=['TEXT', 'IMAGE']
-            )
+        response = client.models.generate_images(
+            model="imagen-3.0-generate-002",
+            prompt=prompt,
+            config=types.GenerateImagesConfig(number_of_images=4)
         )
-        for part in response.candidates[0].content.parts:
-            if part.inline_data and part.inline_data.data:
-                file_path = "gemini_native_image.png"
-                with open(file_path, "wb") as f:
-                    f.write(part.inline_data.data)
-                return file_path
+        paths = []
+        for i, generated_image in enumerate(response.generated_images):
+            image = Image.open(BytesIO(generated_image.image.image_bytes))
+            path = f"imagen_generated_{i}.png"
+            image.save(path)
+            paths.append(path)
+        return paths
     except Exception as e:
-        print("Gemini Error:", e)
-    return None
+        print("Imagen Error:", e)
+        return []
 
 # === Handlers ===
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("👋 Gửi prompt để tạo ảnh bằng Gemini-native!")
+    await update.message.reply_text("👋 Gửi prompt để tạo ảnh bằng Imagen 3.0!")
 
 async def handle_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE):
     prompt = update.message.text.strip()
-    await update.message.reply_text("✨ Đang tạo ảnh từ Gemini...")
-    image_path = await generate_image(prompt)
-    if image_path:
-        with open(image_path, "rb") as img:
-            await update.message.reply_photo(photo=img, caption="🟡 Gemini-native ảnh")
+    await update.message.reply_text("🎨 Đang tạo ảnh...")
+    image_paths = await generate_imagen(prompt)
+
+    if image_paths:
+        for img_path in image_paths:
+            with open(img_path, "rb") as img:
+                await update.message.reply_photo(photo=img)
     else:
-        await update.message.reply_text("❌ Không tạo được ảnh.")
+        await update.message.reply_text("❌ Không thể tạo ảnh từ Imagen 3.0.")
 
+# === Main bot startup ===
 if __name__ == '__main__':
-    import requests
-
-try:
-    ip_info = requests.get("https://ipinfo.io/json").json()
-    print(f"🌐 Server Public IP: {ip_info.get('ip')}")
-    print(f"🌍 Location: {ip_info.get('city')}, {ip_info.get('country')}")
-except Exception as e:
-    print("⚠️ Không thể lấy thông tin IP:", e)
-
     app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_prompt))
-    app.run_polling()
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_prompt))
+
+    app.run_webhook(
+        listen="0.0.0.0",
+        port=int(os.environ.get("PORT", 8080)),
+        webhook_url=WEBHOOK_URL
+    )
