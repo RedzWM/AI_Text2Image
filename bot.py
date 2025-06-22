@@ -10,6 +10,11 @@ from dotenv import load_dotenv
 from google import genai
 from google.genai import types
 
+import requests
+print("Your public IP and region info:")
+print(requests.get("https://ipinfo.io/json").json())
+
+
 # Load environment variables
 load_dotenv()
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
