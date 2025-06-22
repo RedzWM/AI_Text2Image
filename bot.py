@@ -10,6 +10,13 @@ from dotenv import load_dotenv
 from google import genai
 from google.genai import types
 
+import requests
+try:
+    ip_info = requests.get("https://ipinfo.io/json").json()
+    print(f"🔍 Railway Server IP: {ip_info.get('ip')} — {ip_info.get('country')}")
+except Exception as e:
+    print("❌ IP check failed:", e)
+
 # Load environment variables
 load_dotenv()
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
